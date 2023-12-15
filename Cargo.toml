@@ -1,0 +1,17 @@
+[package]
+name = "swes"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.75", features = ["backtrace"] }
+clap = { version = "4.4.11", features = ["derive"] }
+crossbeam = "0.8.2"
+env_logger = "0.10.1"
+log = "0.4.20"
+comrak = "0.20.0"
+serde = { version = "1.0.193", features = ["derive"] }
+tokio = "1.35.0"
+yaml-front-matter = "0.1.0"
