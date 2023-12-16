@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::RwLock,
+    sync::{Arc, RwLock},
 };
 
 use log::error;
@@ -22,7 +22,7 @@ pub struct BlogEntry {
 pub struct BlogStorage {
     base_path: PathBuf,
 
-    entries: RwLock<HashMap<String, BlogEntry>>,
+    entries: RwLock<HashMap<String, Arc<BlogEntry>>>,
 }
 
 impl BlogStorage {
@@ -33,20 +33,21 @@ impl BlogStorage {
         }
     }
 
-    pub async fn get_entry(&self, entry_name: &str) -> anyhow::Result<BlogEntry> {
+    pub async fn get_entry(&self, entry_name: &str) -> anyhow::Result<Arc<BlogEntry>> {
         if let Some(cached_entry) = self.try_find_cached_entry(entry_name) {
             Ok(cached_entry)
         } else {
             let entry = Self::parse_file_to_html(&self.base_path.join(entry_name)).await?;
-            self.try_store_entry(entry_name, &entry);
+            let entry = Arc::new(entry);
+            self.try_store_entry(entry_name, entry.clone());
             Ok(entry)
         }
     }
 
-    fn try_store_entry(&self, entry_name: &str, entry: &BlogEntry) {
+    fn try_store_entry(&self, entry_name: &str, entry: Arc<BlogEntry>) {
         match self.entries.write() {
             Ok(mut storage) => {
-                storage.insert(entry_name.to_owned(), entry.clone());
+                storage.insert(entry_name.to_owned(), entry);
             }
             Err(e) => {
                 error!("Poised entry storage on write: {e}");
@@ -70,7 +71,7 @@ impl BlogStorage {
         })
     }
 
-    fn try_find_cached_entry(&self, entry_name: &str) -> Option<BlogEntry> {
+    fn try_find_cached_entry(&self, entry_name: &str) -> Option<Arc<BlogEntry>> {
         match self.entries.read() {
             Ok(entries) => entries.get(entry_name).cloned(),
             Err(e) => {
