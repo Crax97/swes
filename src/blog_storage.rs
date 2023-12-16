@@ -24,11 +24,12 @@ impl BlogStorage {
         }
     }
 
-    pub fn get_entry(&self, entry_name: &str) -> anyhow::Result<BlogEntry> {
-        Self::parse_file_to_html(&self.base_path.join(entry_name))
+    pub async fn get_entry(&self, entry_name: &str) -> anyhow::Result<BlogEntry> {
+        Self::parse_file_to_html(&self.base_path.join(entry_name)).await
     }
-    fn parse_file_to_html<P: AsRef<Path>>(path: &P) -> anyhow::Result<BlogEntry> {
-        let content = std::fs::read_to_string(path)?;
+
+    async fn parse_file_to_html<P: AsRef<Path>>(path: &P) -> anyhow::Result<BlogEntry> {
+        let content = tokio::fs::read_to_string(&path).await?;
         let document = YamlFrontMatter::parse::<PostMetadata>(&content);
         let document = match document {
             Ok(doc) => doc,

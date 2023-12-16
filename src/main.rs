@@ -12,10 +12,11 @@ struct Args {
     base_path: Option<String>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
     let storage = BlogStorage::new(args.base_path.unwrap_or("blog".to_owned()));
-    let post = storage.get_entry(&args.file).unwrap();
+    let post = storage.get_entry(&args.file).await.unwrap();
     println!("Title: {}", post.description.title);
     println!("Content: \n{}", post.html);
 }
