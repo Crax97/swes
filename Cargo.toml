@@ -15,3 +15,4 @@ comrak = "0.20.0"
 serde = { version = "1.0.193", features = ["derive"] }
 tokio = { version = "1.35.0", features = ["macros", "rt", "rt-multi-thread", "fs"] }
 yaml-front-matter = "0.1.0"
+warp = "0.3.6"
