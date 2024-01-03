@@ -17,3 +17,5 @@ tokio = { version = "1.35.0", features = ["macros", "rt", "rt-multi-thread", "fs
 yaml-front-matter = "0.1.0"
 warp = "0.3.6"
 notify = "6.1.1"
+mime_guess = "2.0.4"
+path-clean = "1.0.1"

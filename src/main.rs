@@ -1,4 +1,5 @@
 mod blog_storage;
+mod file_server;
 
 use std::{
     convert::Infallible,
@@ -7,22 +8,26 @@ use std::{
 };
 
 use clap::Parser;
+use file_server::FileServer;
 use log::{error, info, warn};
 use notify::{
     event::{CreateKind, DataChange, ModifyKind, RemoveKind, RenameMode},
     RecursiveMode, Watcher,
 };
 use tokio::runtime::Handle;
-use warp::{reply::Html, Filter};
+use warp::{
+    reply::{Html, Reply, Response},
+    Filter,
+};
 
 use crate::blog_storage::BlogStorage;
 
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long)]
-    file: Option<String>,
-    #[arg(short, long)]
     base_path: Option<String>,
+    #[arg(short, long)]
+    file_server_path: Option<String>,
 }
 fn create_entry(p: PathBuf, storage: Arc<BlogStorage>, handle: Handle) {
     handle.spawn(async move {
@@ -142,10 +147,14 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let base_path = args.base_path.unwrap_or("blog".to_owned());
+    let file_path = args.file_server_path.unwrap_or("files".to_owned());
 
     let mut storage = BlogStorage::new(base_path.clone());
     add_most_recent_entries(&mut storage, 10, &base_path)?;
     let storage = Arc::new(storage);
+
+    let file_server = FileServer::new(file_path);
+    let file_server = Arc::new(file_server);
 
     let watcher_storage = storage.clone();
     let handle = tokio::runtime::Handle::current();
@@ -200,7 +209,13 @@ async fn main() -> anyhow::Result<()> {
             async move { Ok::<_, Infallible>(home(storage).await) }
         }
     });
-    warp::serve(blog.or(home)).run(([127, 0, 0, 1], 8080)).await;
+    let files = warp::path!("files" / String).and_then(move |path| {
+        let file_server = file_server.clone();
+        async move { Ok::<_, Infallible>(file(PathBuf::from(path), file_server.clone()).await) }
+    });
+    warp::serve(blog.or(home).or(files))
+        .run(([127, 0, 0, 1], 8080))
+        .await;
     Ok(())
 }
 
@@ -223,4 +238,19 @@ async fn home(storage: Arc<BlogStorage>) -> String {
         accum += "\n";
     });
     accum
+}
+
+async fn file(path: PathBuf, file_server: Arc<FileServer>) -> Response {
+    match file_server.serve(&path).await {
+        Ok(file) => warp::reply::with_header(file.data, "content-type", file.mime_type.to_string())
+            .into_response(),
+        Err(e) => {
+            error!("While serving request {path:?} error '{e}' happened");
+            warp::reply::with_status(
+                warp::reply::html("<h1>Not found</h1>"),
+                warp::http::StatusCode::NOT_FOUND,
+            )
+            .into_response()
+        }
+    }
 }
