@@ -3,6 +3,7 @@ mod blog_storage;
 use std::{convert::Infallible, sync::Arc};
 
 use clap::Parser;
+use log::info;
 use warp::Filter;
 
 use crate::blog_storage::BlogStorage;
@@ -17,6 +18,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     let args = Args::parse();
     let storage = BlogStorage::new(args.base_path.unwrap_or("blog".to_owned()));
     let storage = Arc::new(storage);
@@ -33,10 +35,13 @@ async fn main() {
 }
 
 async fn blog(entry: String, storage: Arc<BlogStorage>) -> String {
+    let entry_name = entry.clone();
     let entry = storage.get_entry(&entry).await;
     if let Ok(entry) = entry {
+        info!("Serving entry {entry_name}");
         entry.html.clone()
     } else {
+        info!("Entry {entry_name} not found");
         "<h1>Not found</h1>".to_owned()
     }
 }
