@@ -1,11 +1,10 @@
 use std::{
     collections::HashMap,
-    fs::FileType,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
 
-use log::{error, info, warn};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use yaml_front_matter::YamlFrontMatter;
 
@@ -28,14 +27,9 @@ pub struct BlogStorage {
 
 impl BlogStorage {
     pub fn new<P: AsRef<Path>>(base: P) -> Self {
-        let mut entries = Default::default();
-
-        Self::add_most_recent_entries(&mut entries, 10, &base)
-            .expect("Failed to add most recent entries");
-
         Self {
             base_path: PathBuf::from(base.as_ref()),
-            entries: RwLock::new(entries),
+            entries: Default::default(),
         }
     }
 
@@ -52,43 +46,18 @@ impl BlogStorage {
         }
     }
 
-    fn add_most_recent_entries(
-        entries: &mut HashMap<String, Arc<BlogEntry>>,
-        max_entries: usize,
-        base_path: &impl AsRef<Path>,
-    ) -> anyhow::Result<()> {
-        let entries_iterator = std::fs::read_dir(base_path)?
-            .filter_map(|e| e.ok())
-            .filter(|e| match e.file_type() {
-                Ok(t) => t.is_file(),
-                Err(_) => false,
-            }); // for now ignore the max entries param
-
-        for entry in entries_iterator {
-            let entry_name = entry.file_name();
-            let entry_name = entry_name.to_string_lossy();
-            let entry_name = entry_name.to_string();
-
-            let blog_entry = tokio::task::block_in_place(move || {
-                tokio::runtime::Handle::current()
-                    .block_on(async move { Self::parse_file_to_html(&entry.path()).await })
-            });
-            let blog_entry = match blog_entry {
-                Ok(e) => e,
-                Err(e) => {
-                    warn!("Failed to read blog entry {}", e);
-                    continue;
-                }
-            };
-
-            info!("Added entry {}", entry_name);
-            entries.insert(entry_name, Arc::new(blog_entry));
+    pub async fn remove_entry(&self, entry_name: String) {
+        match self.entries.write() {
+            Ok(mut h) => {
+                h.remove_entry(&entry_name);
+            }
+            Err(e) => {
+                error!("Failed to remove entry {entry_name}: {e}");
+            }
         }
-
-        Ok(())
     }
 
-    fn try_store_entry(&self, entry_name: &str, entry: Arc<BlogEntry>) {
+    pub fn try_store_entry(&self, entry_name: &str, entry: Arc<BlogEntry>) {
         match self.entries.write() {
             Ok(mut storage) => {
                 info!("Entry {entry_name} successfully stored in cache");
@@ -100,7 +69,14 @@ impl BlogStorage {
         }
     }
 
-    async fn parse_file_to_html<P: AsRef<Path>>(path: &P) -> anyhow::Result<BlogEntry> {
+    pub async fn contains_entry(&self, entry_name: &str) -> bool {
+        match self.entries.read() {
+            Ok(e) => e.keys().any(|e| e.as_str() == entry_name),
+            Err(_) => false,
+        }
+    }
+
+    pub async fn parse_file_to_html<P: AsRef<Path>>(path: &P) -> anyhow::Result<BlogEntry> {
         let content = tokio::fs::read_to_string(&path).await?;
         let document = YamlFrontMatter::parse::<PostMetadata>(&content);
         let document = match document {
