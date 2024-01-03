@@ -13,7 +13,7 @@ use notify::{
     RecursiveMode, Watcher,
 };
 use tokio::runtime::Handle;
-use warp::Filter;
+use warp::{reply::Html, Filter};
 
 use crate::blog_storage::BlogStorage;
 
@@ -184,7 +184,7 @@ async fn main() -> anyhow::Result<()> {
     .expect("watcher");
     watcher.watch(Path::new(&base_path), RecursiveMode::NonRecursive)?;
 
-    let routes = warp::path!("blog" / String).and_then({
+    let blog = warp::path!("blog" / String).and_then({
         let storage = storage.clone();
 
         move |entry| {
@@ -192,18 +192,35 @@ async fn main() -> anyhow::Result<()> {
             async move { Ok::<_, Infallible>(blog(entry, storage).await) }
         }
     });
-    warp::serve(routes).run(([127, 0, 0, 1], 8080)).await;
+    let home = warp::path!("blog").and_then({
+        let storage = storage.clone();
+
+        move || {
+            let storage = storage.clone();
+            async move { Ok::<_, Infallible>(home(storage).await) }
+        }
+    });
+    warp::serve(blog.or(home)).run(([127, 0, 0, 1], 8080)).await;
     Ok(())
 }
 
-async fn blog(entry: String, storage: Arc<BlogStorage>) -> String {
+async fn blog(entry: String, storage: Arc<BlogStorage>) -> Html<String> {
     let entry_name = entry.clone();
     let entry = storage.get_entry(&entry).await;
     if let Ok(entry) = entry {
         info!("Serving entry {entry_name}");
-        entry.html.clone()
+        warp::reply::html(entry.html.clone())
     } else {
         info!("Entry {entry_name} not found");
-        "<h1>Not found</h1>".to_owned()
+        warp::reply::html("<h1>Not found</h1>".to_owned())
     }
+}
+
+async fn home(storage: Arc<BlogStorage>) -> String {
+    let mut accum = String::new();
+    storage.iterate_most_recent_entries(|e| {
+        accum += &e.description.title;
+        accum += "\n";
+    });
+    accum
 }

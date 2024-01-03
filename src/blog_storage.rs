@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
+    time::SystemTime,
 };
 
 use log::{error, info};
@@ -17,12 +18,15 @@ pub struct PostMetadata {
 pub struct BlogEntry {
     pub description: PostMetadata,
     pub html: String,
+    pub creation_date: SystemTime,
 }
 
 pub struct BlogStorage {
     base_path: PathBuf,
 
     entries: RwLock<HashMap<String, Arc<BlogEntry>>>,
+    most_recent_entries: RwLock<Vec<Arc<BlogEntry>>>,
+    max_most_recent_entries: usize,
 }
 
 impl BlogStorage {
@@ -30,6 +34,8 @@ impl BlogStorage {
         Self {
             base_path: PathBuf::from(base.as_ref()),
             entries: Default::default(),
+            most_recent_entries: Default::default(),
+            max_most_recent_entries: 10,
         }
     }
 
@@ -61,11 +67,23 @@ impl BlogStorage {
         match self.entries.write() {
             Ok(mut storage) => {
                 info!("Entry {entry_name} successfully stored in cache");
-                storage.insert(entry_name.to_owned(), entry);
+                storage.insert(entry_name.to_owned(), entry.clone());
             }
             Err(e) => {
                 error!("Poised entry storage on write: {e}");
             }
+        }
+
+        match self.most_recent_entries.write() {
+            Ok(mut entries) => {
+                match entries.binary_search_by(|e| e.creation_date.cmp(&entry.creation_date)) {
+                    Ok(pos) => entries.insert(pos, entry),
+                    Err(pos) => entries.insert(pos, entry),
+                }
+
+                entries.truncate(self.max_most_recent_entries);
+            }
+            Err(_) => todo!(),
         }
     }
 
@@ -76,8 +94,22 @@ impl BlogStorage {
         }
     }
 
+    pub fn iterate_most_recent_entries<F: FnMut(&BlogEntry)>(&self, mut f: F) {
+        match self.most_recent_entries.read() {
+            Ok(entries) => {
+                for entry in entries.iter() {
+                    f(entry)
+                }
+            }
+            Err(e) => {
+                error!("tried to iterate most recent entries, but {e} happened");
+            }
+        }
+    }
+
     pub async fn parse_file_to_html<P: AsRef<Path>>(path: &P) -> anyhow::Result<BlogEntry> {
         let content = tokio::fs::read_to_string(&path).await?;
+        let meta = tokio::fs::metadata(path).await?;
         let document = YamlFrontMatter::parse::<PostMetadata>(&content);
         let document = match document {
             Ok(doc) => doc,
@@ -89,6 +121,7 @@ impl BlogStorage {
         Ok(BlogEntry {
             description: document.metadata,
             html,
+            creation_date: meta.created()?,
         })
     }
 
