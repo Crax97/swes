@@ -1,11 +1,13 @@
 <html>
 <head>
+    <link rel="stylesheet" href="/files/style.css">
     <script>
     {{> hot_reload_script}}
     </script>
-    <title>{{description.title}}</title>
+    <title>{{blog_entry.description.title}}</title>
 </head>
 <body>
-    {{{html}}}
+    <h1 id="blog_title" >{{blog_entry.description.title}}</h1>
+    {{{blog_entry.html}}}
 </body>
 </html>

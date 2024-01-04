@@ -47,6 +47,18 @@ struct HomeContent {
     important_entries: Vec<BlogEntry>,
 }
 
+#[derive(Serialize)]
+struct BlogContent {
+    blog_info: BlogInfo,
+    blog_entry: BlogEntry,
+}
+
+#[derive(Serialize)]
+struct NotFoundContent {
+    blog_info: BlogInfo,
+    entry_not_found: String,
+}
+
 impl HandlebarsSupport {
     pub fn new<P: AsRef<Path>>(theme_path: P) -> anyhow::Result<Self> {
         let handlebars = load_handlebars_theme(&theme_path)?;
@@ -62,8 +74,12 @@ impl HandlebarsSupport {
         Ok(())
     }
 
-    pub fn format_blog_entry(&self, blog_entry: &BlogEntry) -> String {
-        self.handlebars.render(BLOG_ENTRY, blog_entry).unwrap()
+    pub fn format_blog_entry(&self, blog_info: BlogInfo, blog_entry: &BlogEntry) -> String {
+        let entry_info = BlogContent {
+            blog_info,
+            blog_entry: blog_entry.clone(),
+        };
+        self.handlebars.render(BLOG_ENTRY, &entry_info).unwrap()
     }
 
     pub fn format_home(&self, blog_info: BlogInfo, important_entries: Vec<BlogEntry>) -> String {
@@ -74,9 +90,13 @@ impl HandlebarsSupport {
         self.handlebars.render(HOME, &home_info).unwrap()
     }
 
-    pub fn format_not_found(&self, entry: String) -> String {
+    pub fn format_not_found(&self, blog_info: BlogInfo, entry_not_found: String) -> String {
+        let entry_info = NotFoundContent {
+            blog_info,
+            entry_not_found,
+        };
         self.handlebars
-            .render(BLOG_ENTRY_NOT_FOUND, &entry)
+            .render(BLOG_ENTRY_NOT_FOUND, &entry_info)
             .unwrap()
     }
 }

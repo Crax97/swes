@@ -30,6 +30,12 @@ use warp::{
 
 use crate::blog_storage::BlogStorage;
 
+fn blog_info() -> BlogInfo {
+    BlogInfo {
+        name: "Crax's blog".to_owned(),
+    }
+}
+
 #[derive(Clone)]
 pub enum UpdateEvent {
     Reload,
@@ -243,6 +249,7 @@ async fn main() -> anyhow::Result<()> {
         })
         .expect("handlebars watcher");
     handlebars_watcher.watch(&handlebars_path, RecursiveMode::NonRecursive)?;
+    handlebars_watcher.watch(Path::new("files/style.css"), RecursiveMode::NonRecursive)?;
 
     let blog = warp::path!("blog" / String).and_then({
         let storage = storage.clone();
@@ -291,10 +298,10 @@ async fn blog(
         .expect("Failed to open handlebars support");
     if let Ok(entry) = entry {
         info!("Serving entry {entry_name}");
-        warp::reply::html(handlebars_support.format_blog_entry(&entry))
+        warp::reply::html(handlebars_support.format_blog_entry(blog_info(), &entry))
     } else {
         info!("Entry {entry_name} not found");
-        warp::reply::html(handlebars_support.format_not_found(entry_name))
+        warp::reply::html(handlebars_support.format_not_found(blog_info(), entry_name))
     }
 }
 
@@ -307,12 +314,7 @@ async fn home(
     let home = handlebars_support
         .read()
         .expect("Poised handlebars support")
-        .format_home(
-            BlogInfo {
-                name: "Crax's blog".to_owned(),
-            },
-            accum,
-        );
+        .format_home(blog_info(), accum);
     warp::reply::html(home)
 }
 
