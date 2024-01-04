@@ -1,14 +1,17 @@
 mod blog_storage;
 mod file_server;
+mod handlebars_support;
 
 use std::{
     convert::Infallible,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
+use blog_storage::BlogInfo;
 use clap::Parser;
 use file_server::FileServer;
+use handlebars_support::HandlebarsSupport;
 use log::{error, info, warn};
 use notify::{
     event::{CreateKind, DataChange, ModifyKind, RemoveKind, RenameMode},
@@ -26,8 +29,12 @@ use crate::blog_storage::BlogStorage;
 struct Args {
     #[arg(short, long)]
     base_path: Option<String>,
+
     #[arg(short, long)]
     file_server_path: Option<String>,
+
+    #[arg(long)]
+    handlebars_theme: Option<String>,
 }
 fn create_entry(p: PathBuf, storage: Arc<BlogStorage>, handle: Handle) {
     handle.spawn(async move {
@@ -148,6 +155,9 @@ async fn main() -> anyhow::Result<()> {
 
     let base_path = args.base_path.unwrap_or("blog".to_owned());
     let file_path = args.file_server_path.unwrap_or("files".to_owned());
+    let handlebars_theme = args.handlebars_theme.unwrap_or("default".to_owned());
+
+    let handlebars_path = Path::new("themes").join(handlebars_theme);
 
     let mut storage = BlogStorage::new(base_path.clone());
     add_most_recent_entries(&mut storage, 10, &base_path)?;
@@ -155,6 +165,9 @@ async fn main() -> anyhow::Result<()> {
 
     let file_server = FileServer::new(file_path);
     let file_server = Arc::new(file_server);
+
+    let handlebars_support = HandlebarsSupport::new(&handlebars_path)?;
+    let handlebars_support = Arc::new(RwLock::new(handlebars_support));
 
     let watcher_storage = storage.clone();
     let handle = tokio::runtime::Handle::current();
@@ -193,20 +206,42 @@ async fn main() -> anyhow::Result<()> {
     .expect("watcher");
     watcher.watch(Path::new(&base_path), RecursiveMode::NonRecursive)?;
 
+    let handlebars_support_watcher = handlebars_support.clone();
+    let mut handlebars_watcher =
+        notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+            Ok(evt) => {
+                if let notify::EventKind::Modify(_) = evt.kind {
+                    info!("Reloading handlebars theme");
+                    handlebars_support_watcher
+                        .write()
+                        .expect("Failed to write hb support")
+                        .reload_theme()
+                        .unwrap_or_else(|e| error!("Handlebars reload failed: {e}"));
+                }
+            }
+            Err(e) => error!("err {e:?}"),
+        })
+        .expect("handlebars watcher");
+    handlebars_watcher.watch(&handlebars_path, RecursiveMode::NonRecursive)?;
+
     let blog = warp::path!("blog" / String).and_then({
         let storage = storage.clone();
 
+        let handlebars_support = handlebars_support.clone();
         move |entry| {
             let storage = storage.clone();
-            async move { Ok::<_, Infallible>(blog(entry, storage).await) }
+            let handlebars_support = handlebars_support.clone();
+            async move { Ok::<_, Infallible>(blog(entry, storage, handlebars_support).await) }
         }
     });
     let home = warp::path!("blog").and_then({
         let storage = storage.clone();
+        let handlebars_support = handlebars_support.clone();
 
         move || {
             let storage = storage.clone();
-            async move { Ok::<_, Infallible>(home(storage).await) }
+            let handlebars_support = handlebars_support.clone();
+            async move { Result::<_, Infallible>::Ok(home(storage, handlebars_support).await) }
         }
     });
     let files = warp::path!("files" / String).and_then(move |path| {
@@ -219,25 +254,41 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn blog(entry: String, storage: Arc<BlogStorage>) -> Html<String> {
+async fn blog(
+    entry: String,
+    storage: Arc<BlogStorage>,
+    handlebars_support: Arc<RwLock<HandlebarsSupport>>,
+) -> Html<String> {
     let entry_name = entry.clone();
     let entry = storage.get_entry(&entry).await;
+    let handlebars_support = handlebars_support
+        .read()
+        .expect("Failed to open handlebars support");
     if let Ok(entry) = entry {
         info!("Serving entry {entry_name}");
-        warp::reply::html(entry.html.clone())
+        warp::reply::html(handlebars_support.format_blog_entry(&entry))
     } else {
         info!("Entry {entry_name} not found");
-        warp::reply::html("<h1>Not found</h1>".to_owned())
+        warp::reply::html(handlebars_support.format_not_found(entry_name))
     }
 }
 
-async fn home(storage: Arc<BlogStorage>) -> String {
-    let mut accum = String::new();
-    storage.iterate_most_recent_entries(|e| {
-        accum += &e.description.title;
-        accum += "\n";
-    });
-    accum
+async fn home(
+    storage: Arc<BlogStorage>,
+    handlebars_support: Arc<RwLock<HandlebarsSupport>>,
+) -> Html<String> {
+    let mut accum = Vec::new();
+    storage.iterate_most_recent_entries(|e| accum.push(e.clone()));
+    let home = handlebars_support
+        .read()
+        .expect("Poised handlebars support")
+        .format_home(
+            BlogInfo {
+                name: "Crax's blog".to_owned(),
+            },
+            accum,
+        );
+    warp::reply::html(home)
 }
 
 async fn file(path: PathBuf, file_server: Arc<FileServer>) -> Response {

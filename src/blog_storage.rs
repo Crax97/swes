@@ -14,11 +14,17 @@ pub struct PostMetadata {
     pub title: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BlogInfo {
+    pub name: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BlogEntry {
     pub description: PostMetadata,
     pub html: String,
     pub creation_date: SystemTime,
+    pub filename: String,
 }
 
 pub struct BlogStorage {
@@ -118,10 +124,14 @@ impl BlogStorage {
             }
         };
         let html = comrak::markdown_to_html(&document.content, &comrak::Options::default());
+        let filename = path.as_ref().to_path_buf();
+        let filename = filename.file_name().unwrap().to_string_lossy();
+        let filename = filename.to_string();
         Ok(BlogEntry {
             description: document.metadata,
             html,
             creation_date: meta.created()?,
+            filename,
         })
     }
 
