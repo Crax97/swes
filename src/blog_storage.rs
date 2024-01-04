@@ -82,7 +82,7 @@ impl BlogStorage {
 
         match self.most_recent_entries.write() {
             Ok(mut entries) => {
-                match entries.binary_search_by(|e| e.creation_date.cmp(&entry.creation_date)) {
+                match entries.binary_search_by(|e| entry.creation_date.cmp(&e.creation_date)) {
                     Ok(pos) => entries.insert(pos, entry),
                     Err(pos) => entries.insert(pos, entry),
                 }
