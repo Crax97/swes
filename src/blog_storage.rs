@@ -73,7 +73,11 @@ impl BlogStorage {
         match self.entries.write() {
             Ok(mut storage) => {
                 info!("Entry {entry_name} successfully stored in cache");
-                storage.insert(entry_name.to_owned(), entry.clone());
+                let old = storage.insert(entry_name.to_owned(), entry.clone());
+                if old.is_some() {
+                    // Avoid inserting again entry
+                    return; 
+                }
             }
             Err(e) => {
                 error!("Poised entry storage on write: {e}");
@@ -82,6 +86,11 @@ impl BlogStorage {
 
         match self.most_recent_entries.write() {
             Ok(mut entries) => {
+                if entries.iter().any(|e| e.filename == entry.filename) {
+                    // Avoid inserting again entry
+                    // Another check just to be extra sure
+                    return;
+                }
                 match entries.binary_search_by(|e| entry.creation_date.cmp(&e.creation_date)) {
                     Ok(pos) => entries.insert(pos, entry),
                     Err(pos) => entries.insert(pos, entry),
