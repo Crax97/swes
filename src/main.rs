@@ -272,6 +272,7 @@ async fn main() -> anyhow::Result<()> {
         let receiver = send.subscribe();
         sse_update(receiver)
     });
+    info!("Serve ready");
     warp::serve(blog.or(home).or(files).or(events))
         .run(([127, 0, 0, 1], 8080))
         .await;

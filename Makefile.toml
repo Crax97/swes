@@ -1,0 +1,5 @@
+[tasks.run]
+install_crate = "cargo-watch"
+command = "cargo"
+args = ["watch", "-w", "src", "-x", 'run --release -- --base-path tests']
+env = { "RUST_LOG" = "info" }
