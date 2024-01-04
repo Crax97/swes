@@ -2,6 +2,7 @@ mod blog_storage;
 mod file_server;
 mod handlebars_support;
 
+use futures_util::StreamExt;
 use std::{
     convert::Infallible,
     path::{Path, PathBuf},
@@ -17,13 +18,22 @@ use notify::{
     event::{CreateKind, DataChange, ModifyKind, RemoveKind, RenameMode},
     RecursiveMode, Watcher,
 };
-use tokio::runtime::Handle;
+use tokio::{
+    runtime::Handle,
+    sync::broadcast::{Receiver, Sender},
+};
 use warp::{
+    filters::sse::Event,
     reply::{Html, Reply, Response},
     Filter,
 };
 
 use crate::blog_storage::BlogStorage;
+
+#[derive(Clone)]
+pub enum UpdateEvent {
+    Reload,
+}
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -172,14 +182,21 @@ async fn main() -> anyhow::Result<()> {
     let watcher_storage = storage.clone();
     let handle = tokio::runtime::Handle::current();
 
+    let (send, _): (Sender<UpdateEvent>, Receiver<UpdateEvent>) =
+        tokio::sync::broadcast::channel(500);
+
+    let md_sender = send.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         match res {
             Ok(evt) => match evt.kind {
-                notify::EventKind::Create(f) if f == CreateKind::File => create_entry(
-                    evt.paths[0].clone(),
-                    watcher_storage.clone(),
-                    handle.clone(),
-                ),
+                notify::EventKind::Create(f) if f == CreateKind::File => {
+                    create_entry(
+                        evt.paths[0].clone(),
+                        watcher_storage.clone(),
+                        handle.clone(),
+                    );
+                    let _ = md_sender.send(UpdateEvent::Reload);
+                }
                 notify::EventKind::Modify(f)
                     if matches!(
                         f,
@@ -192,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
                         watcher_storage.clone(),
                         handle.clone(),
                     );
+                    let _ = md_sender.send(UpdateEvent::Reload);
                 }
                 notify::EventKind::Remove(f) if f == RemoveKind::File => remove_entry(
                     evt.paths[0].clone(),
@@ -207,6 +225,7 @@ async fn main() -> anyhow::Result<()> {
     watcher.watch(Path::new(&base_path), RecursiveMode::NonRecursive)?;
 
     let handlebars_support_watcher = handlebars_support.clone();
+    let handlebars_sender = send.clone();
     let mut handlebars_watcher =
         notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
             Ok(evt) => {
@@ -217,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
                         .expect("Failed to write hb support")
                         .reload_theme()
                         .unwrap_or_else(|e| error!("Handlebars reload failed: {e}"));
+                    let _ = handlebars_sender.send(UpdateEvent::Reload);
                 }
             }
             Err(e) => error!("err {e:?}"),
@@ -248,7 +268,11 @@ async fn main() -> anyhow::Result<()> {
         let file_server = file_server.clone();
         async move { Ok::<_, Infallible>(file(PathBuf::from(path), file_server.clone()).await) }
     });
-    warp::serve(blog.or(home).or(files))
+    let events = warp::path!("events").and(warp::get()).map(move || {
+        let receiver = send.subscribe();
+        sse_update(receiver)
+    });
+    warp::serve(blog.or(home).or(files).or(events))
         .run(([127, 0, 0, 1], 8080))
         .await;
     Ok(())
@@ -304,4 +328,24 @@ async fn file(path: PathBuf, file_server: Arc<FileServer>) -> Response {
             .into_response()
         }
     }
+}
+
+fn sse_data(evt: UpdateEvent) -> Result<Event, Infallible> {
+    let event = match evt {
+        UpdateEvent::Reload => "reload",
+    };
+    Ok(Event::default().data(event.to_string()))
+}
+
+fn sse_update(receiver: Receiver<UpdateEvent>) -> impl Reply {
+    let stream = tokio_stream::wrappers::BroadcastStream::new(receiver);
+
+    let stream = stream.map(move |event| match event {
+        Ok(event) => sse_data(event),
+        Err(e) => {
+            error!("While receiving reload event: {e}");
+            sse_data(UpdateEvent::Reload)
+        }
+    });
+    warp::sse::reply(stream)
 }

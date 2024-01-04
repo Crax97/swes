@@ -9,11 +9,16 @@ const BLOG_ENTRY: &str = "blog_entry";
 const BLOG_ENTRY_NOT_FOUND: &str = "entry_not_found";
 const HOME: &str = "home";
 
+const HANDLEBARS_RELOAD_SCRIPT: &str = include_str!("../static/hot_reload.js");
+const HANDLEBARS_RELOAD_PARTIAL: &str = "hot_reload_script";
+
 fn load_handlebars_theme<P: AsRef<Path>>(path: P) -> anyhow::Result<Handlebars<'static>> {
     const BLOG_ENTRY_FILE: &str = "blog_entry.handlebars";
     const BLOG_ENTRY_NOT_FOUND_FILE: &str = "entry_not_found.handlebars";
     const HOME_FILE: &str = "home.handlebars";
+
     let mut handlebars = Handlebars::new();
+    handlebars.register_partial(HANDLEBARS_RELOAD_PARTIAL, HANDLEBARS_RELOAD_SCRIPT)?;
     handlebars.register_template_string(
         BLOG_ENTRY,
         std::fs::read_to_string(path.as_ref().join(BLOG_ENTRY_FILE))?,

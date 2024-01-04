@@ -1,8 +1,12 @@
 <html>
 <head>
+    <script>
+    {{> hot_reload_script}}
+    </script>
     <title>{{blog_info.name}}</title>
 </head>
 <body>
+    <h1>Welcome to Crax's blog!</h1>
     {{#each important_entries}}
         <a href="/blog/{{filename}}">{{description.title}}</a></br>
     {{/each}}
