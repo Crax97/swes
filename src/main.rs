@@ -76,7 +76,9 @@ fn create_entry(p: PathBuf, storage: Arc<BlogStorage>, handle: Handle) {
             }
         };
         info!("Storing new entry {entry_name}");
-        storage.try_store_entry(&entry_name, Arc::new(blog_entry));
+        storage
+            .try_store_entry(&entry_name, Arc::new(blog_entry))
+            .await;
     });
 }
 
@@ -105,7 +107,9 @@ fn reload_entry(path: PathBuf, watcher_storage: Arc<BlogStorage>, handle: Handle
                         return;
                     }
                 };
-                watcher_storage.try_store_entry(&entry_name, Arc::new(blog_entry));
+                watcher_storage
+                    .try_store_entry(&entry_name, Arc::new(blog_entry))
+                    .await;
             }
         }
     });
@@ -132,7 +136,7 @@ fn remove_entry(path: PathBuf, watcher_storage: Arc<BlogStorage>, handle: Handle
     });
 }
 
-fn add_most_recent_entries(
+async fn add_most_recent_entries(
     storage: &mut BlogStorage,
     _max_entries: usize,
     base_path: &impl AsRef<Path>,
@@ -160,13 +164,14 @@ fn add_most_recent_entries(
                 continue;
             }
         };
-
         if !is_valid_filename_entry(&entry_name) {
             info!("Ignoring entry {entry_name}");
             continue;
         }
         info!("Added entry {}", entry_name);
-        storage.try_store_entry(&entry_name, Arc::new(blog_entry));
+        storage
+            .try_store_entry(&entry_name, Arc::new(blog_entry))
+            .await;
     }
 
     Ok(())
@@ -183,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
     let handlebars_path = Path::new("themes").join(handlebars_theme);
 
     let mut storage = BlogStorage::new(base_path.clone());
-    add_most_recent_entries(&mut storage, 10, &base_path)?;
+    add_most_recent_entries(&mut storage, 10, &base_path).await?;
     let storage = Arc::new(storage);
 
     let file_server = FileServer::new(file_path);
@@ -320,7 +325,9 @@ async fn home(
     handlebars_support: Arc<RwLock<HandlebarsSupport>>,
 ) -> Html<String> {
     let mut accum = Vec::new();
-    storage.iterate_most_recent_entries(|e| accum.push(e.clone()));
+    storage
+        .iterate_most_recent_entries(|e| accum.push(e.clone()))
+        .await;
     let home = handlebars_support
         .read()
         .expect("Poised handlebars support")

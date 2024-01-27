@@ -1,13 +1,14 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::SystemTime,
 };
 
 use chrono::{DateTime, Utc};
-use log::{error, info};
+use log::info;
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use yaml_front_matter::YamlFrontMatter;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -49,80 +50,68 @@ impl BlogStorage {
     }
 
     pub async fn get_entry(&self, entry_name: &str) -> anyhow::Result<Arc<BlogEntry>> {
-        if let Some(cached_entry) = self.try_find_cached_entry(entry_name) {
+        if let Some(cached_entry) = self.try_find_cached_entry(entry_name).await {
             info!("Hit a cache entry for {entry_name}");
             Ok(cached_entry)
         } else {
             info!("Entry {entry_name} not found in cache, attempting to load it");
             let entry = Self::parse_file_to_html(&self.base_path.join(entry_name)).await?;
             let entry = Arc::new(entry);
-            self.try_store_entry(entry_name, entry.clone());
+            self.try_store_entry(entry_name, entry.clone()).await;
             Ok(entry)
         }
     }
 
     pub async fn remove_entry(&self, entry_name: String) {
-        match self.entries.write() {
-            Ok(mut h) => {
-                h.remove_entry(&entry_name);
-            }
-            Err(e) => {
-                error!("Failed to remove entry {entry_name}: {e}");
-            }
-        }
+        self.entries.write().await.remove_entry(&entry_name);
     }
 
-    pub fn try_store_entry(&self, entry_name: &str, entry: Arc<BlogEntry>) {
-        match self.entries.write() {
-            Ok(mut storage) => {
-                info!("Entry {entry_name} successfully stored in cache");
-                let old = storage.insert(entry_name.to_owned(), entry.clone());
-                if old.is_some() {
-                    // Avoid inserting again entry
-                    return;
-                }
-            }
-            Err(e) => {
-                error!("Poised entry storage on write: {e}");
-            }
+    pub async fn try_store_entry(&self, entry_name: &str, entry: Arc<BlogEntry>) {
+        let old = self
+            .entries
+            .write()
+            .await
+            .insert(entry_name.to_owned(), entry.clone());
+        info!("Entry {entry_name} successfully stored in cache");
+        if old.is_some() {
+            // Avoid inserting again entry
+            return;
         }
 
-        match self.most_recent_entries.write() {
-            Ok(mut entries) => {
-                if entries.iter().any(|e| e.filename == entry.filename) {
-                    // Avoid inserting again entry
-                    // Another check just to be extra sure
-                    return;
-                }
-                match entries.binary_search_by(|e| entry.description.publish_date.cmp(&e.description.publish_date)) {
-                    Ok(pos) => entries.insert(pos, entry),
-                    Err(pos) => entries.insert(pos, entry),
-                }
+        let mut entries = self.most_recent_entries.write().await;
 
-                entries.truncate(self.max_most_recent_entries);
-            }
-            Err(_) => todo!(),
+        if entries.iter().any(|e| e.filename == entry.filename) {
+            // Avoid inserting again entry
+            // Another check just to be extra sure
+            return;
         }
+        match entries.binary_search_by(|e| {
+            entry
+                .description
+                .publish_date
+                .cmp(&e.description.publish_date)
+        }) {
+            Ok(pos) => entries.insert(pos, entry),
+            Err(pos) => entries.insert(pos, entry),
+        }
+
+        entries.truncate(self.max_most_recent_entries);
     }
 
     pub async fn contains_entry(&self, entry_name: &str) -> bool {
-        match self.entries.read() {
-            Ok(e) => e.keys().any(|e| e.as_str() == entry_name),
-            Err(_) => false,
-        }
+        self.entries
+            .read()
+            .await
+            .keys()
+            .any(|e| e.as_str() == entry_name)
     }
 
-    pub fn iterate_most_recent_entries<F: FnMut(&BlogEntry)>(&self, mut f: F) {
-        match self.most_recent_entries.read() {
-            Ok(entries) => {
-                for entry in entries.iter() {
-                    f(entry)
-                }
-            }
-            Err(e) => {
-                error!("tried to iterate most recent entries, but {e} happened");
-            }
-        }
+    pub async fn iterate_most_recent_entries<F: FnMut(&BlogEntry)>(&self, mut f: F) {
+        self.most_recent_entries
+            .read()
+            .await
+            .iter()
+            .for_each(|entry| f(entry));
     }
 
     pub async fn parse_file_to_html<P: AsRef<Path>>(path: &P) -> anyhow::Result<BlogEntry> {
@@ -147,13 +136,7 @@ impl BlogStorage {
         })
     }
 
-    fn try_find_cached_entry(&self, entry_name: &str) -> Option<Arc<BlogEntry>> {
-        match self.entries.read() {
-            Ok(entries) => entries.get(entry_name).cloned(),
-            Err(e) => {
-                error!("Poised entry storage on read: {e}");
-                None
-            }
-        }
+    async fn try_find_cached_entry(&self, entry_name: &str) -> Option<Arc<BlogEntry>> {
+        self.entries.read().await.get(entry_name).cloned()
     }
 }
