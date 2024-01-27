@@ -1,6 +1,13 @@
 <html>
 <head>
     <link rel="stylesheet" href="/files/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- and it's easy to individually load additional languages -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+
+    <script>hljs.highlightAll();</script>
     <script>
     {{> hot_reload_script}}
     </script>
@@ -8,6 +15,7 @@
 </head>
 <body>
     <h1 id="blog_title" >{{blog_entry.description.title}}</h1>
+    <h2 id="author"> Written by {{blog_entry.description.author}} at {{blog_entry.description.publish_date}}</h2>
     {{{blog_entry.html}}}
 </body>
 </html>

@@ -22,3 +22,4 @@ path-clean = "1.0.1"
 handlebars = "5.0.0"
 tokio-stream = { version = "0.1.14", features = ["sync"] }
 futures-util = "0.3.30"
+chrono = { version = "0.4.31", features = ["serde"] }

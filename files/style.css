@@ -1,6 +1,16 @@
+
 body {
     font-family: monospace;
     background-color: gray;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100vh;
+    overflow-wrap: break-word;
+}
+
+img {
+    max-width: 30%;
 }
 
 #blog_title {

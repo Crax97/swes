@@ -1,5 +1,7 @@
 ---
 title: This is how to implement foo
+author: Crax
+publish_date: 2024-1-12T09:00:00Z
 ---
 
 # Way 1

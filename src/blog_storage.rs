@@ -5,6 +5,7 @@ use std::{
     time::SystemTime,
 };
 
+use chrono::{DateTime, Utc};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use yaml_front_matter::YamlFrontMatter;
@@ -12,6 +13,8 @@ use yaml_front_matter::YamlFrontMatter;
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PostMetadata {
     pub title: String,
+    pub author: String,
+    pub publish_date: DateTime<Utc>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -76,7 +79,7 @@ impl BlogStorage {
                 let old = storage.insert(entry_name.to_owned(), entry.clone());
                 if old.is_some() {
                     // Avoid inserting again entry
-                    return; 
+                    return;
                 }
             }
             Err(e) => {
@@ -91,7 +94,7 @@ impl BlogStorage {
                     // Another check just to be extra sure
                     return;
                 }
-                match entries.binary_search_by(|e| entry.creation_date.cmp(&e.creation_date)) {
+                match entries.binary_search_by(|e| entry.description.publish_date.cmp(&e.description.publish_date)) {
                     Ok(pos) => entries.insert(pos, entry),
                     Err(pos) => entries.insert(pos, entry),
                 }

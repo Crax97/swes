@@ -5,6 +5,7 @@ mod handlebars_support;
 use futures_util::StreamExt;
 use std::{
     convert::Infallible,
+    net::SocketAddr,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
@@ -51,6 +52,12 @@ struct Args {
 
     #[arg(long)]
     handlebars_theme: Option<String>,
+
+    #[arg(long)]
+    address: Option<String>,
+
+    #[arg(long)]
+    port: Option<u16>,
 }
 fn create_entry(p: PathBuf, storage: Arc<BlogStorage>, handle: Handle) {
     handle.spawn(async move {
@@ -280,8 +287,11 @@ async fn main() -> anyhow::Result<()> {
         sse_update(receiver)
     });
     info!("Serve ready");
+
+    let addr = args.address.unwrap_or("127.0.0.1".to_owned());
+    let port = args.port.unwrap_or(8080);
     warp::serve(blog.or(home).or(files).or(events))
-        .run(([127, 0, 0, 1], 8080))
+        .run(SocketAddr::new(addr.parse().unwrap(), port))
         .await;
     Ok(())
 }
